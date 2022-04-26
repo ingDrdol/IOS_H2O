@@ -21,7 +21,7 @@ typedef struct quene{
  * 
  * @param que je staticky vytvořená instance struktury
  */
-void fifo_init(FIFO *que);
+FIFO * fifo_init();
 /**
  * @brief přidá hodnotu na konec fronty
  * 
