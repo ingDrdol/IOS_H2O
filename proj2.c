@@ -20,12 +20,22 @@
 //^---obojí převzato z discordu
 
 
-//#define DEBUG
+//#define DEBUG <----- pro vypis na stdout
 
 //globální počítadla
 int *sh_hz = NULL, *sh_hid = NULL, *sh_o = NULL, *sh_oz = NULL, *sh_line = NULL, *sh_m = NULL;
 //globální semafory
 sem_t *hsem = NULL, *osem = NULL, *writing = NULL, *crsem = NULL, *working = NULL, *hclsem = NULL, *hendsem = NULL, *crhsem = NULL;
+/*
+    osem - rizeni procesu O
+    hsem - rizeni procesu H
+    writing - pro zapis do sdilenych promennych a souboru
+    crsem - pro zaslani z procesu O procesum H po vytvoreni molekul
+    working - pro zaslani signalu hlavnimu procesu po skonceni vsech ostatnich procesu
+    hclsem - zaslia signal procesu O pri skonceni procesu H u cisteni H procesu
+    hendsem - zasila signal O procesu pri ukonceni H procesu
+    crhsem - vzajemne zasila signal H procesum o vytvoreni molekuly
+*/
 //výstupní soubor 
 FILE *out1;
 
@@ -63,6 +73,8 @@ void init()
     if(sh_line == MAP_FAILED)
             exit(1);
     *sh_line = 0;
+////////////////////////////////////////////////////////////////////////////////////
+///                  vytvoreni sdilenych promennych
 
     if((hsem = sem_open("hsem_xkocma09", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED){
         #ifdef DEBUG
@@ -115,9 +127,13 @@ void init()
         #endif
         exit(1);
     }
+////////////////////////////////////////////////////////////////////////////////////////
+//                              vytvoreni semaforu
 
     out1 = fopen("proj2.out", "w");
     if(out1 == NULL) exit(-1);
+////////////////////////////////////////////////////////////////////////////////////////
+///                          otevreni vystupniho souboru
 }
 
 /**
@@ -131,6 +147,8 @@ void dest()
     UNMAP(sh_oz);
     UNMAP(sh_m);
     UNMAP(sh_line);
+///////////////////////////////////////////////////
+///       uvolneni sdilenych promennych
 
     sem_unlink("hsem_xkocma09");
     sem_close(hsem);
@@ -152,78 +170,89 @@ void dest()
 
     sem_unlink("hendsem_xkocma09");
     sem_close(hendsem);
+/////////////////////////////////////////////////////
+///             odpojeni semaforu
 
     fclose(out1);
+/////////////////////////////////////////////////////
+///             zavreni souboru
 }
 
 void oxygen(int ti, int tb, int nh, int no)
 {
-    int id;
-    int wti = rand()%(ti + 1) * 1000;
-    int wtb = rand()%(tb + 1) * 1000;
+    int id; // <----- id procesu
+    int wti = rand()%(ti + 1) * 1000; // <----- nahodne cekani pred vstupem do fronty 
+    int wtb = rand()%(tb + 1) * 1000; // <----- cas pro vytvareni molekuly
 
+////////////////////////////////////////////////////////////////////////
 {
     sem_wait(writing);
-    *sh_o += 1;
-    id = *sh_o;
-    *sh_line += 1;
+    *sh_o += 1; // <----- navyseni sdilene promenne sh_o
+    id = *sh_o; // <----- inicializace id
+    *sh_line += 1; // <----- navyseni sdilene promene sh_line pro indikaci radku
     #ifdef DEBUG
         printf("%d: O %d: started\n", *sh_line, id);
     #endif
-    fprintf(out1, "%d: O %d: started\n", *sh_line, id);
-    fflush(out1);
+    fprintf(out1, "%d: O %d: started\n", *sh_line, id); // <----- zapis do souboru
+    fflush(out1); // <----- flush bufferu
     sem_post(writing);
 }
+/**                     vypis pri zahajeni procesu O                **/
 
-    usleep(wti);
+    usleep(wti); // <----- nahodne cecani pred vstupem do fronty
 
+////////////////////////////////////////////////////////////////////////
 {
     sem_wait(writing);
-    *sh_line += 1;
+    *sh_line += 1; // <----- navyseni sdilene promene sh_line pro indikaci radku 
     #ifdef DEBUG
         printf("%d: O %d: going to queue\n", *sh_line, id);
     #endif
-    fprintf(out1, "%d: O %d: going to queue\n", *sh_line, id);
-    fflush(out1);
+    fprintf(out1, "%d: O %d: going to queue\n", *sh_line, id); // <----- vypis do souboru
+    fflush(out1); // <----- flush bufferu
     sem_post(writing);
 }
+/**                     vypis pri vstupu do fronty                  **/
 
-    sem_wait(osem);
+    sem_wait(osem); // <----- cekani na ukonceni predchoziho procesu
 
+////////////////////////////////////////////////////////////////////////
 {   
     if((nh - *sh_hz) < 2)
     {
         sem_wait(writing);
-        *sh_line += 1;
+        *sh_line += 1; // <----- navyseni sdilene promene sh_line pro indikaci radku
         #ifdef DEBUG
             printf("%d: O %d: not enough H\n", *sh_line, id);
         #endif
-        fprintf(out1, "%d: O %d: not enough H\n", *sh_line, id);
+        fprintf(out1, "%d: O %d: not enough H\n", *sh_line, id);// <----- asi to nebudu psat pokazde
         fflush(out1);
         sem_post(writing);
-        if(*sh_hz != nh)
+        while(*sh_hz != nh) // <----- dokud nejaky proces H zbyva (muze byt vlastne jen jeden)
         {
-            while(*sh_hz != nh)
-            {
-                sem_post(hsem);
-                sem_wait(hclsem);
-            }
+            sem_post(hsem); // <----- pusteni procesu pres hsem
+            sem_wait(hclsem); // <----- cekani na potvrzeni o ukonceni procesu H
         }
-        sem_post(working);
-        sem_post(osem);
+
+        if(*sh_o == no) // <----- kdyz je to posledni proces
+            sem_post(working); // <----- uvolni hlavni proces
+        sem_post(osem); // <----- pust dalsi proces z fronty
         #ifdef DEBUG
             printf("exit O%d\n", id);
         #endif
         exit(0);
     } 
 }
+/**      vyklizeni procesu pri nedostatku na vytvoreni molekuly     **/
+
     sem_wait(writing);
-    *sh_m += 1;
+    *sh_m += 1; // <----- "vytvoreni molekuly"
     sem_post(writing);
 
-    sem_post(hsem);
-    sem_post(hsem);
+    sem_post(hsem); 
+    sem_post(hsem); // <----- informovani procesu H o vytvareni molekuly
 
+////////////////////////////////////////////////////////////////////////
 {
     sem_wait(writing);
     *sh_line += 1;
@@ -234,15 +263,17 @@ void oxygen(int ti, int tb, int nh, int no)
     fflush(out1);
     sem_post(writing);
 }
+/**            vypsani pri zahajeni vytvareni molekul               **/
 
-    usleep(wtb);
+    usleep(wtb); // <----- simulace vytvareni molekuly
 
-    sem_wait(crhsem);
-    sem_wait(crhsem);
+    sem_wait(crhsem); 
+    sem_wait(crhsem); // <----- cekani na oba procesy H
 
-    sem_post(crsem);
-    sem_post(crsem);
+    sem_post(crsem); 
+    sem_post(crsem); // <----- informovani H procesu o vytvoreni molekuly
 
+////////////////////////////////////////////////////////////////////////
 {
     sem_wait(writing);
     *sh_oz += 1;
@@ -254,25 +285,28 @@ void oxygen(int ti, int tb, int nh, int no)
     fflush(out1);
     sem_post(writing);
 }
+/**                vypsani pri vytvoreni molekuly                   **/
 
     sem_wait(hendsem);
-    sem_wait(hendsem);
+    sem_wait(hendsem); // <----- cekani na ukonceni H procesu
 
-    if(*sh_oz == no)
-    {
-        if(*sh_hz != nh)
-        {
-            while(*sh_hz != nh)
-            {
-                sem_post(hsem);
-                sem_wait(hclsem);
-            }
-        }
-        sem_post(working);
-    }
-    
+//----------------------------------//
+    if(*sh_oz == no)                //
+    {                               //
+        if(*sh_hz != nh)            //
+        {                           //
+            while(*sh_hz != nh)     //
+            {                       //
+                sem_post(hsem);     //
+                sem_wait(hclsem);   //
+            }                       //
+        }                           //
+        sem_post(working);          //
+    }                               //
+//--------cisteni procesu-----------//
+//--------^podrobne vyse^-----------//
 
-    sem_post(osem);
+    sem_post(osem); // <----- pusteni dalsiho O procesu z fronty
     #ifdef DEBUG
         printf("exit O%d\n", id);
     #endif
@@ -281,14 +315,15 @@ void oxygen(int ti, int tb, int nh, int no)
 
 void hydrogen(int ti, int no, int nh)
 {
-    int id;
-    int wti = rand()%(ti + 1) * 1000;
+    int id; // <----- id procesu
+    int wti = rand()%(ti + 1) * 1000; // <----- nahodne cekani pred vstupem do fronty
 
+///////////////////////////////////////////////////////////////////////
 {
     sem_wait(writing);
     *sh_line += 1;
-    *sh_hid += 1;
-    id = *sh_hid;
+    *sh_hid += 1; // <----- navyseni sdilenych promennych
+    id = *sh_hid; // <----- inicializace id
     #ifdef DEBUG
         printf("%d: H %d: started\n", *sh_line, id);
     #endif
@@ -296,9 +331,11 @@ void hydrogen(int ti, int no, int nh)
     fflush(out1);
     sem_post(writing);
 }
+/**                     vypis pri zahajeni procesu H               **/
+    
+    usleep(wti); // <----- nahodny cas pred vstupem do fronty
 
-    usleep(wti);
-
+///////////////////////////////////////////////////////////////////////
 {
     sem_wait(writing);
     *sh_line += 1;
@@ -309,9 +346,11 @@ void hydrogen(int ti, int no, int nh)
     fflush(out1);
     sem_post(writing);
 }
+/**                     zapis pri vstupu do fronty                 **/
 
-    sem_wait(hsem);
+    sem_wait(hsem); // <----- cekani na signal od O procesu
 
+///////////////////////////////////////////////////////////////////////
 {
     if(nh - *sh_hz < 2 || *sh_oz == no)
     {
@@ -324,8 +363,8 @@ void hydrogen(int ti, int no, int nh)
         fprintf(out1, "%d: H %d: not enough O or H\n", *sh_line, id);
         fflush(out1);
         sem_post(writing);
-        if(*sh_o == no)
-            sem_post(hclsem);
+        if(*sh_o == no) // <----- kdyz je zavolan poslednim O procesem
+            sem_post(hclsem); // <----- signal O procesu pro pokracovani
 
         #ifdef DEBUG
             printf("exit H%d\n", id);
@@ -333,7 +372,9 @@ void hydrogen(int ti, int no, int nh)
         exit(0);
     }
 }
+/**                ukonceni pri nedostatku procesu                 **/
 
+//////////////////////////////////////////////////////////////////////
 {
     sem_wait(writing);
     *sh_line += 1;
@@ -344,9 +385,12 @@ void hydrogen(int ti, int no, int nh)
     fflush(out1);
     sem_post(writing); 
 }
-    sem_post(crhsem);
-    sem_wait(crsem);
+/**                vypis pred vytvarenim molekuly                 **/
+  
+    sem_post(crhsem); // <----- signal O procesu o zahajeni vytvareni procesu
+    sem_wait(crsem); // <----- cekani na vytvoreni molekuly
 
+//////////////////////////////////////////////////////////////////////
 {
     sem_wait(writing);
     *sh_hz += 1;
@@ -359,6 +403,8 @@ void hydrogen(int ti, int no, int nh)
     fflush(out1);
     sem_post(writing);     
 }
+/**                 vypis po vytvoreni molekuly                   **/
+
     #ifdef DEBUG
         printf("exit H%d\n", id);
     #endif
@@ -369,28 +415,35 @@ void gen_atoms(int no, int nh, int ti, int tb)
 {
     int i;
     pid_t pid;
+
+//////////////////////////////////////////////////////////////////////    
     for(i = 0; i < no; i++)
     {
         pid = fork();
         if(!pid)
             oxygen(ti, tb, nh, no);
     }
+/**                      generovani O procesu                     **/
+
+//////////////////////////////////////////////////////////////////////
     for(i = 0; i < nh; i++)
     {
         pid = fork();
         if(!pid)
             hydrogen(ti, no, nh);
     }
-    sem_post(osem);
+/**                      generovani H procesu                     **/
+
+    sem_post(osem); // <----- zahajeni tvorby molekul
 }
 
 int main(int argc, char **argv)
 {
     srand(time(NULL));
-    int no, nh, ti, tb;
-    char *rest;
+    int no, nh, ti, tb; // <----- argumenty
+    char *rest; // <----- ukazatel pro funkci strtol na zbytek argumentu pro kontrolu
 
-    //kontrola argumentu
+//////////////////////////////////////////////////////////////////////
     {
     if(argc != 5)
     {
@@ -432,13 +485,15 @@ int main(int argc, char **argv)
         return 1;
     }
     } 
-    init();
+/**                      kontrola argumentu                       **/    
+    
+    init(); // <----- inicializace semaforu, sdilenych promennych a vystupniho souboru
 
-    gen_atoms(no, nh, ti, tb);
+    gen_atoms(no, nh, ti, tb); // <----- generovani procesu
 
-    sem_wait(working);
+    sem_wait(working); // <----- cekani na posledni O proces
 
-    dest();
+    dest(); // <----- destruktor semaforu, sdilenych souboru a vystupniho souboru
 
     return 0;
 }
