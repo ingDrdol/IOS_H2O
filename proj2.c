@@ -9,6 +9,7 @@
 #include <time.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <string.h>
 //------------------^ includy
 
 
@@ -19,12 +20,12 @@
 //^---obojí převzato z discordu
 
 
-#define DEBUG
+//#define DEBUG
 
 //globální počítadla
 int *sh_hz = NULL, *sh_hid = NULL, *sh_o = NULL, *sh_oz = NULL, *sh_line = NULL, *sh_m = NULL;
 //globální semafory
-sem_t *hsem = NULL, *osem = NULL, *writing = NULL, *crsem = NULL, *working = NULL, *hclsem = NULL, *hendsem = NULL;
+sem_t *hsem = NULL, *osem = NULL, *writing = NULL, *crsem = NULL, *working = NULL, *hclsem = NULL, *hendsem = NULL, *crhsem = NULL;
 //výstupní soubor 
 FILE *out1;
 
@@ -63,28 +64,6 @@ void init()
             exit(1);
     *sh_line = 0;
 
-{
-    sem_unlink("hsem_xkocma09");
-    sem_close(hsem);
-
-    sem_unlink("osem_xkocma09");
-    sem_close(osem);
-
-    sem_unlink("writing_xkocma09");
-    sem_close(writing);
-
-    sem_unlink("crsem_xkocma09");
-    sem_close(crsem);
-
-    sem_unlink("working_xkocma09");
-    sem_close(working);
-
-    sem_unlink("hclsem_xkocma09");
-    sem_close(hclsem);
-
-    sem_unlink("hendsem_xkocma09");
-    sem_close(hendsem);
-}
     if((hsem = sem_open("hsem_xkocma09", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED){
         #ifdef DEBUG
         printf("hsem failed\n");
@@ -126,6 +105,13 @@ void init()
     if((hendsem = sem_open("hendsem_xkocma09", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED){
         #ifdef DEBUG
         printf("hendsem failed\n");
+        #endif
+        exit(1);
+    }
+
+    if((crhsem = sem_open("crhsem_xkocma09", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED){
+        #ifdef DEBUG
+        printf("crhsem failed\n");
         #endif
         exit(1);
     }
@@ -173,8 +159,8 @@ void dest()
 void oxygen(int ti, int tb, int nh, int no)
 {
     int id;
-    int wti = rand()%(ti + 1);
-    int wtb = rand()%(tb + 1);
+    int wti = rand()%(ti + 1) * 1000;
+    int wtb = rand()%(tb + 1) * 1000;
 
 {
     sem_wait(writing);
@@ -182,7 +168,7 @@ void oxygen(int ti, int tb, int nh, int no)
     id = *sh_o;
     *sh_line += 1;
     #ifdef DEBUG
-    printf("%d: O %d: started\n", *sh_line, id);
+        printf("%d: O %d: started\n", *sh_line, id);
     #endif
     fprintf(out1, "%d: O %d: started\n", *sh_line, id);
     fflush(out1);
@@ -195,7 +181,7 @@ void oxygen(int ti, int tb, int nh, int no)
     sem_wait(writing);
     *sh_line += 1;
     #ifdef DEBUG
-    printf("%d: O %d: going to queue\n", *sh_line, id);
+        printf("%d: O %d: going to queue\n", *sh_line, id);
     #endif
     fprintf(out1, "%d: O %d: going to queue\n", *sh_line, id);
     fflush(out1);
@@ -210,7 +196,7 @@ void oxygen(int ti, int tb, int nh, int no)
         sem_wait(writing);
         *sh_line += 1;
         #ifdef DEBUG
-        printf("%d: O %d: not enough H\n", *sh_line, id);
+            printf("%d: O %d: not enough H\n", *sh_line, id);
         #endif
         fprintf(out1, "%d: O %d: not enough H\n", *sh_line, id);
         fflush(out1);
@@ -224,6 +210,10 @@ void oxygen(int ti, int tb, int nh, int no)
             }
         }
         sem_post(working);
+        sem_post(osem);
+        #ifdef DEBUG
+            printf("exit O%d\n", id);
+        #endif
         exit(0);
     } 
 }
@@ -238,7 +228,7 @@ void oxygen(int ti, int tb, int nh, int no)
     sem_wait(writing);
     *sh_line += 1;
     #ifdef DEBUG
-    printf("%d: O %d: creating molecule %d\n", *sh_line, id, *sh_m);
+        printf("%d: O %d: creating molecule %d\n", *sh_line, id, *sh_m);
     #endif
     fprintf(out1, "%d: O %d: creating molecule %d\n", *sh_line, id, *sh_m);
     fflush(out1);
@@ -246,6 +236,9 @@ void oxygen(int ti, int tb, int nh, int no)
 }
 
     usleep(wtb);
+
+    sem_wait(crhsem);
+    sem_wait(crhsem);
 
     sem_post(crsem);
     sem_post(crsem);
@@ -255,7 +248,7 @@ void oxygen(int ti, int tb, int nh, int no)
     *sh_oz += 1;
     *sh_line += 1;
     #ifdef DEBUG
-    printf("%d: O %d: molecule %d created\n", *sh_line, id, *sh_m);
+        printf("%d: O %d: molecule %d created\n", *sh_line, id, *sh_m);
     #endif
     fprintf(out1, "%d: O %d: molecule %d created\n", *sh_line, id, *sh_m);
     fflush(out1);
@@ -280,14 +273,16 @@ void oxygen(int ti, int tb, int nh, int no)
     
 
     sem_post(osem);
-
+    #ifdef DEBUG
+        printf("exit O%d\n", id);
+    #endif
     exit(0);
 }
 
 void hydrogen(int ti, int no, int nh)
 {
     int id;
-    int wti = rand()%(ti + 1);
+    int wti = rand()%(ti + 1) * 1000;
 
 {
     sem_wait(writing);
@@ -295,7 +290,7 @@ void hydrogen(int ti, int no, int nh)
     *sh_hid += 1;
     id = *sh_hid;
     #ifdef DEBUG
-    printf("%d: H %d: started\n", *sh_line, id);
+        printf("%d: H %d: started\n", *sh_line, id);
     #endif
     fprintf(out1, "%d: H %d: started\n", *sh_line, id);
     fflush(out1);
@@ -308,7 +303,7 @@ void hydrogen(int ti, int no, int nh)
     sem_wait(writing);
     *sh_line += 1;
     #ifdef DEBUG
-    printf("%d: H %d: going to queue\n", *sh_line, id);
+        printf("%d: H %d: going to queue\n", *sh_line, id);
     #endif
     fprintf(out1, "%d: H %d: going to queue\n", *sh_line, id);
     fflush(out1);
@@ -324,13 +319,17 @@ void hydrogen(int ti, int no, int nh)
         *sh_hz += 1;
         *sh_line += 1;
         #ifdef DEBUG
-        printf("%d: H %d: not enough O or H\n", *sh_line, id);
+            printf("%d: H %d: not enough O or H\n", *sh_line, id);
         #endif
         fprintf(out1, "%d: H %d: not enough O or H\n", *sh_line, id);
         fflush(out1);
         sem_post(writing);
         if(*sh_o == no)
             sem_post(hclsem);
+
+        #ifdef DEBUG
+            printf("exit H%d\n", id);
+        #endif
         exit(0);
     }
 }
@@ -339,13 +338,13 @@ void hydrogen(int ti, int no, int nh)
     sem_wait(writing);
     *sh_line += 1;
     #ifdef DEBUG
-    printf("%d: H %d: creating molecule %d\n", *sh_line, id, *sh_m);
+        printf("%d: H %d: creating molecule %d\n", *sh_line, id, *sh_m);
     #endif
     fprintf(out1, "%d: H %d: creating molecule %d\n", *sh_line, id, *sh_m);
     fflush(out1);
     sem_post(writing); 
 }
-
+    sem_post(crhsem);
     sem_wait(crsem);
 
 {
@@ -354,13 +353,15 @@ void hydrogen(int ti, int no, int nh)
     sem_post(hendsem);
     *sh_line += 1;
     #ifdef DEBUG
-    printf("%d: H %d: molecule %d created\n", *sh_line, id, *sh_m);
+        printf("%d: H %d: molecule %d created\n", *sh_line, id, *sh_m);
     #endif
     fprintf(out1, "%d: H %d: molecule %d created\n", *sh_line, id, *sh_m);
     fflush(out1);
     sem_post(writing);     
 }
-
+    #ifdef DEBUG
+        printf("exit H%d\n", id);
+    #endif
     exit(0);
 }
 
@@ -394,38 +395,43 @@ int main(int argc, char **argv)
     if(argc != 5)
     {
         fprintf(stderr, "Nespravny pocet argumentu\n");
-        return -1;
+        return 1;
     }
     
+    if((strcmp("", argv[3]) == 0) || (strcmp("", argv[4]) == 0))
+    {
+        fprintf(stderr, "Prazdny argument TI nebo TB\n");
+        return 1;
+    }
+
     no = strtol(argv[1], &rest, 10);
-    if(*rest != '\0')
+    if(*rest != '\0' || no <= 0)
     {
         fprintf(stderr, "Pocet NO nevalidni\n");
-        return -1;
+        return 1;
     }
 
     nh = strtol(argv[2], &rest, 10);
-    if(*rest != '\0')
+    if(*rest != '\0' || nh <= 0)
     {
         fprintf(stderr, "Pocet NH nevalidni\n");
-        return -1;
+        return 1;
     }
 
     ti = strtol(argv[3], &rest, 10);
     if(*rest != '\0' || ti < 0 || ti > 1000)
     {
         fprintf(stderr, "TI nevalidni\n");
-        return -1;
+        return 1;
     }
 
     tb = strtol(argv[4], &rest, 10);
-    if(*rest != '\0' || tb < 0 || tb > 1000)
+    if(*rest != '\0' || tb < 0 || tb > 1000 )
     {
         fprintf(stderr, "TB nevalidni\n");
-        return -1;
+        return 1;
     }
-    }
-    
+    } 
     init();
 
     gen_atoms(no, nh, ti, tb);
