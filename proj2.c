@@ -20,7 +20,7 @@
 //^---obojí převzato z discordu
 
 
-//#define DEBUG <----- pro vypis na stdout
+//#define DEBUG // <----- pro vypis na stdout
 
 //globální počítadla
 int *sh_hz = NULL, *sh_hid = NULL, *sh_o = NULL, *sh_oz = NULL, *sh_line = NULL, *sh_m = NULL;
@@ -39,11 +39,37 @@ sem_t *hsem = NULL, *osem = NULL, *writing = NULL, *crsem = NULL, *working = NUL
 //výstupní soubor 
 FILE *out1;
 
-/**
- * @brief hmm copak to asi bude dělat??
-**/
+void sem_dest()
+{
+    sem_unlink("hsem_xkocma09");
+    sem_close(hsem);
+
+    sem_unlink("osem_xkocma09");
+    sem_close(osem);
+
+    sem_unlink("writing_xkocma09");
+    sem_close(writing);
+
+    sem_unlink("crhsem_xkocma09");
+    sem_close(crsem);
+
+    sem_unlink("crsem_xkocma09");
+    sem_close(crsem);
+
+    sem_unlink("working_xkocma09");
+    sem_close(working);
+
+    sem_unlink("hclsem_xkocma09");
+    sem_close(hclsem);
+
+    sem_unlink("hendsem_xkocma09");
+    sem_close(hendsem);
+}
+
 void init()
 {
+   // sem_dest();
+
     MMAP(sh_hz);
     if(sh_hz == MAP_FAILED)
             exit(1);
@@ -130,15 +156,12 @@ void init()
 ////////////////////////////////////////////////////////////////////////////////////////
 //                              vytvoreni semaforu
 
-    out1 = fopen("proj2.out", "w");
+    out1 = fopen("proj2.log", "w");
     if(out1 == NULL) exit(-1);
 ////////////////////////////////////////////////////////////////////////////////////////
 ///                          otevreni vystupniho souboru
 }
 
-/**
- * @brief další taková sebevysvětlující funkcička
- **/
 void dest()
 {
     UNMAP(sh_hz);
@@ -150,26 +173,7 @@ void dest()
 ///////////////////////////////////////////////////
 ///       uvolneni sdilenych promennych
 
-    sem_unlink("hsem_xkocma09");
-    sem_close(hsem);
-
-    sem_unlink("osem_xkocma09");
-    sem_close(osem);
-
-    sem_unlink("writing_xkocma09");
-    sem_close(writing);
-
-    sem_unlink("crsem_xkocma09");
-    sem_close(crsem);
-
-    sem_unlink("working_xkocma09");
-    sem_close(working);
-
-    sem_unlink("hclsem_xkocma09");
-    sem_close(hclsem);
-
-    sem_unlink("hendsem_xkocma09");
-    sem_close(hendsem);
+   sem_dest();
 /////////////////////////////////////////////////////
 ///             odpojeni semaforu
 
